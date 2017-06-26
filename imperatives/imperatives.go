@@ -40,6 +40,7 @@ const (
 	num
 	optPrefix
 	optAddr
+	optBlocking
 	optSub
 	optRegex
 	optFlush
@@ -76,6 +77,7 @@ var tokens = []toki.Def{
 	{Token: modRoute, Pattern: "modRoute"},
 	{Token: optPrefix, Pattern: "prefix="},
 	{Token: optAddr, Pattern: "addr="},
+	{Token: optBlocking, Pattern: "blocking="},
 	{Token: optSub, Pattern: "sub="},
 	{Token: optRegex, Pattern: "regex="},
 	{Token: optFlush, Pattern: "flush="},
@@ -109,8 +111,8 @@ var tokens = []toki.Def{
 var errFmtAddBlack = errors.New("addBlack <prefix|sub|regex> <pattern>")
 var errFmtAddAgg = errors.New("addAgg <avg|delta|last|max|min|stdev|sum> <regex> <fmt> <interval> <wait>")
 var errFmtAddRoute = errors.New("addRoute <type> <key> [prefix/sub/regex=,..]  <dest>  [<dest>[...]] where <dest> is <addr> [prefix/sub,regex,flush,reconn,pickle,spool=...]") // note flush and reconn are ints, pickle and spool are true/false. other options are strings
-var errFmtAddRouteGrafanaNet = errors.New("addRoute grafanaNet key [prefix/sub/regex]  addr apiKey schemasFile [spool=true/false sslverify=true/false bufSize=int flushMaxNum=int flushMaxWait=int timeout=int concurrency=int orgId=int]")
-var errFmtAddRouteKafkaMdm = errors.New("addRoute kafkaMdm key [prefix/sub/regex]  broker topic codec schemasFile partitionBy orgId [bufSize=int flushMaxNum=int flushMaxWait=int timeout=int]")
+var errFmtAddRouteGrafanaNet = errors.New("addRoute grafanaNet key [prefix/sub/regex]  addr apiKey schemasFile [spool=true/false sslverify=true/false blocking=true/false bufSize=int flushMaxNum=int flushMaxWait=int timeout=int concurrency=int orgId=int]")
+var errFmtAddRouteKafkaMdm = errors.New("addRoute kafkaMdm key [prefix/sub/regex]  broker topic codec schemasFile partitionBy orgId [blocking=true/false bufSize=int flushMaxNum=int flushMaxWait=int timeout=int]")
 var errFmtAddDest = errors.New("addDest <routeKey> <dest>") // not implemented yet
 var errFmtAddRewriter = errors.New("addRewriter <old> <new> <max>")
 var errFmtModDest = errors.New("modDest <routeKey> <dest> <addr/prefix/sub/regex=>") // one or more can be specified at once
@@ -334,9 +336,20 @@ func readAddRouteGrafanaNet(s *toki.Scanner, table Table) error {
 	var timeout = 5000      // in ms
 	var concurrency = 10    // number of concurrent connections to tsdb-gw
 	var orgId = 1
+	var blocking = false
 
 	for ; t.Token != toki.EOF; t = s.Next() {
 		switch t.Token {
+		case optBlocking:
+			t = s.Next()
+			if t.Token == optTrue || t.Token == optFalse {
+				blocking, err = strconv.ParseBool(string(t.Value))
+				if err != nil {
+					return err
+				}
+			} else {
+				return errFmtAddRouteGrafanaNet
+			}
 		case optSpool:
 			t = s.Next()
 			if t.Token == optTrue || t.Token == optFalse {
@@ -422,7 +435,7 @@ func readAddRouteGrafanaNet(s *toki.Scanner, table Table) error {
 		}
 	}
 
-	route, err := route.NewGrafanaNet(key, prefix, sub, regex, addr, apiKey, schemasFile, spool, sslVerify, bufSize, flushMaxNum, flushMaxWait, timeout, concurrency, orgId)
+	route, err := route.NewGrafanaNet(key, prefix, sub, regex, addr, apiKey, schemasFile, spool, sslVerify, blocking, bufSize, flushMaxNum, flushMaxWait, timeout, concurrency, orgId)
 	if err != nil {
 		return err
 	}
@@ -490,10 +503,21 @@ func readAddRouteKafkaMdm(s *toki.Scanner, table Table) error {
 	var flushMaxNum = 10000 // number of metrics
 	var flushMaxWait = 500  // in ms
 	var timeout = 2000      // in ms
+	var blocking = false
 
 	t = s.Next()
 	for ; t.Token != toki.EOF; t = s.Next() {
 		switch t.Token {
+		case optBlocking:
+			t = s.Next()
+			if t.Token == optTrue || t.Token == optFalse {
+				blocking, err = strconv.ParseBool(string(t.Value))
+				if err != nil {
+					return err
+				}
+			} else {
+				return errFmtAddRouteKafkaMdm
+			}
 		case optBufSize:
 			t = s.Next()
 			if t.Token == num {
@@ -539,7 +563,7 @@ func readAddRouteKafkaMdm(s *toki.Scanner, table Table) error {
 		}
 	}
 
-	route, err := route.NewKafkaMdm(key, prefix, sub, regex, topic, codec, schemasFile, partitionBy, brokers, bufSize, orgId, flushMaxNum, flushMaxWait, timeout)
+	route, err := route.NewKafkaMdm(key, prefix, sub, regex, topic, codec, schemasFile, partitionBy, brokers, bufSize, orgId, flushMaxNum, flushMaxWait, timeout, blocking)
 	if err != nil {
 		return err
 	}
